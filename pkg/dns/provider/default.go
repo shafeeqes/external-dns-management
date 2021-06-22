@@ -46,27 +46,30 @@ func (this *DefaultDNSZoneState) Clone() DNSZoneState {
 ////////////////////////////////////////////////////////////////////////////////
 
 type DefaultDNSHostedZone struct {
-	providerType string   // provider type
-	id           string   // identifying id for provider api
-	domain       string   // base domain for zone
-	forwarded    []string // forwarded sub domains
-	key          string   // internal key used by provider (not used by this lib)
-	isPrivate    bool     // indicates a private zone
+	zoneID    QualifiedZoneID // qualified zone id
+	domain    string          // base domain for zone
+	forwarded []string        // forwarded sub domains
+	key       string          // internal key used by provider (not used by this lib)
+	isPrivate bool            // indicates a private zone
 }
 
 func (this *DefaultDNSHostedZone) Key() string {
 	if this.key != "" {
 		return this.key
 	}
-	return this.id
+	return this.zoneID.ZoneID()
 }
 
 func (this *DefaultDNSHostedZone) ProviderType() string {
-	return this.providerType
+	return this.zoneID.ProviderType()
 }
 
 func (this *DefaultDNSHostedZone) Id() string {
-	return this.id
+	return this.zoneID.ZoneID()
+}
+
+func (this *DefaultDNSHostedZone) QualifiedZoneID() QualifiedZoneID {
+	return this.zoneID
 }
 
 func (this *DefaultDNSHostedZone) Domain() string {
@@ -97,11 +100,11 @@ func Match(zone DNSHostedZone, dnsname string) int {
 	return 0
 }
 
-func NewDNSHostedZone(ptype string, id, domain, key string, forwarded []string, isPrivate bool) DNSHostedZone {
-	return &DefaultDNSHostedZone{providerType: ptype, id: id, key: key, domain: domain, forwarded: forwarded, isPrivate: isPrivate}
+func NewDNSHostedZone(ptype, zoneid, domain, key string, forwarded []string, isPrivate bool) DNSHostedZone {
+	return &DefaultDNSHostedZone{zoneID: NewQualifiedZoneID(ptype, zoneid), key: key, domain: domain, forwarded: forwarded, isPrivate: isPrivate}
 }
 
 func CopyDNSHostedZone(zone DNSHostedZone, forwardedDomains []string) DNSHostedZone {
-	return &DefaultDNSHostedZone{providerType: zone.ProviderType(), id: zone.Id(), key: zone.Key(),
+	return &DefaultDNSHostedZone{zoneID: zone.QualifiedZoneID(), key: zone.Key(),
 		domain: zone.Domain(), forwarded: forwardedDomains, isPrivate: zone.IsPrivate()}
 }

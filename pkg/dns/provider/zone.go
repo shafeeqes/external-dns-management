@@ -26,7 +26,7 @@ import (
 	dnsutils "github.com/gardener/external-dns-management/pkg/dns/utils"
 )
 
-type dnsHostedZones map[string]*dnsHostedZone
+type dnsHostedZones map[QualifiedZoneID]*dnsHostedZone
 
 type dnsHostedZone struct {
 	*dnsutils.RateLimiter
@@ -80,6 +80,10 @@ func (this *dnsHostedZone) ProviderType() string {
 
 func (this *dnsHostedZone) Id() string {
 	return this.getZone().Id()
+}
+
+func (this *dnsHostedZone) QualifiedZoneID() QualifiedZoneID {
+	return this.getZone().QualifiedZoneID()
 }
 
 func (this *dnsHostedZone) Domain() string {

@@ -114,9 +114,9 @@ type state struct {
 	providers       map[resources.ObjectName]*dnsProviderVersion
 	deleting        map[resources.ObjectName]*dnsProviderVersion
 	secrets         map[resources.ObjectName]resources.ObjectNameSet
-	zones           map[string]*dnsHostedZone
-	zoneproviders   map[string]resources.ObjectNameSet
-	providerzones   map[resources.ObjectName]map[string]*dnsHostedZone
+	zones           map[QualifiedZoneID]*dnsHostedZone
+	zoneproviders   map[QualifiedZoneID]resources.ObjectNameSet
+	providerzones   map[resources.ObjectName]map[QualifiedZoneID]*dnsHostedZone
 	providersecrets map[resources.ObjectName]resources.ObjectName
 	zonePolicies    map[string]*dnsHostedZonePolicy
 	zoneStateTTL    atomic.Value
@@ -140,7 +140,6 @@ func NewDNSState(ctx Context, ownerresc resources.Interface, classes *controller
 	ctx.Infof("dry run mode:                %t", config.Dryrun)
 	ctx.Infof("reschedule delay:            %v", config.RescheduleDelay)
 	ctx.Infof("zone cache ttl for zones:    %v", config.CacheTTL)
-	ctx.Infof("zone cache persist dir:      %s", config.CacheDir)
 	ctx.Infof("disable zone state caching:  %t", !config.ZoneStateCaching)
 
 	realms := access.RealmTypes{"use": access.NewRealmType(dns.REALM_ANNOTATION)}
@@ -152,15 +151,15 @@ func NewDNSState(ctx Context, ownerresc resources.Interface, classes *controller
 		ownerresc:       ownerresc,
 		config:          config,
 		realms:          realms,
-		accountCache:    NewAccountCache(config.CacheTTL, config.CacheDir, config.Options),
+		accountCache:    NewAccountCache(config.CacheTTL, config.Options),
 		ownerCache:      NewOwnerCache(ctx, &config),
 		foreign:         map[resources.ObjectName]*foreignProvider{},
 		providers:       map[resources.ObjectName]*dnsProviderVersion{},
 		deleting:        map[resources.ObjectName]*dnsProviderVersion{},
-		zones:           map[string]*dnsHostedZone{},
+		zones:           map[QualifiedZoneID]*dnsHostedZone{},
 		secrets:         map[resources.ObjectName]resources.ObjectNameSet{},
-		zoneproviders:   map[string]resources.ObjectNameSet{},
-		providerzones:   map[resources.ObjectName]map[string]*dnsHostedZone{},
+		zoneproviders:   map[QualifiedZoneID]resources.ObjectNameSet{},
+		providerzones:   map[resources.ObjectName]map[QualifiedZoneID]*dnsHostedZone{},
 		providersecrets: map[resources.ObjectName]resources.ObjectName{},
 		zonePolicies:    map[string]*dnsHostedZonePolicy{},
 		entries:         Entries{},
@@ -246,28 +245,28 @@ func (this *state) GetHandlerFactory() DNSHandlerFactory {
 	return this.config.Factory
 }
 
-func (this *state) GetProvidersForZone(zoneid string) DNSProviders {
+func (this *state) GetProvidersForZone(zoneid QualifiedZoneID) DNSProviders {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 	return this.getProvidersForZone(zoneid)
 }
 
-func (this *state) HasProvidersForZone(zoneid string) bool {
+func (this *state) HasProvidersForZone(zoneid QualifiedZoneID) bool {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 	return this.hasProvidersForZone(zoneid)
 }
 
-func (this *state) hasProvidersForZone(zoneid string) bool {
+func (this *state) hasProvidersForZone(zoneid QualifiedZoneID) bool {
 	return len(this.zoneproviders[zoneid]) > 0
 }
 
-func (this *state) isProviderForZone(zoneid string, p resources.ObjectName) bool {
+func (this *state) isProviderForZone(zoneid QualifiedZoneID, p resources.ObjectName) bool {
 	set := this.zoneproviders[zoneid]
 	return set != nil && set.Contains(p)
 }
 
-func (this *state) getProvidersForZone(zoneid string) DNSProviders {
+func (this *state) getProvidersForZone(zoneid QualifiedZoneID) DNSProviders {
 	result := DNSProviders{}
 	for n := range this.zoneproviders[zoneid] {
 		p := this.providers[n]
@@ -282,7 +281,7 @@ func (this *state) getProvidersForZone(zoneid string) DNSProviders {
 	return result
 }
 
-func (this *state) addProviderForZone(zoneid string, p resources.ObjectName) {
+func (this *state) addProviderForZone(zoneid QualifiedZoneID, p resources.ObjectName) {
 	set := this.zoneproviders[zoneid]
 	if set == nil {
 		set = resources.ObjectNameSet{}
@@ -291,7 +290,7 @@ func (this *state) addProviderForZone(zoneid string, p resources.ObjectName) {
 	set.Add(p)
 }
 
-func (this *state) removeProviderForZone(zoneid string, p resources.ObjectName) {
+func (this *state) removeProviderForZone(zoneid QualifiedZoneID, p resources.ObjectName) {
 	set := this.zoneproviders[zoneid]
 	if set != nil {
 		set.Remove(p)
@@ -375,7 +374,7 @@ func (this *state) GetZonesForProvider(name resources.ObjectName) dnsHostedZones
 	return copyZones(this.providerzones[name])
 }
 
-func (this *state) GetEntriesForZone(logger logger.LogContext, zoneid string) (Entries, DNSNames, bool) {
+func (this *state) GetEntriesForZone(logger logger.LogContext, zoneid QualifiedZoneID) (Entries, DNSNames, bool) {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 	entries := Entries{}
@@ -416,11 +415,11 @@ loop:
 						logger.Infof("no valid provider found for %q(%s)", e.ObjectName(), dns)
 					}
 				}
-				if fallback == nil || !fallback.IncludesZone(zone.Id()) {
+				if fallback == nil || !fallback.IncludesZone(zone.QualifiedZoneID()) {
 					stale[e.DNSName()] = e
 					continue
 				}
-			} else if !provider.IncludesZone(zone.Id()) {
+			} else if !provider.IncludesZone(zone.QualifiedZoneID()) {
 				continue
 			}
 			if zone.Match(dns) > 0 {
@@ -450,23 +449,24 @@ loop:
 	return entries, stale, deleting
 }
 
-func (this *state) GetZoneForEntry(e *Entry) string {
+func (this *state) GetZoneForEntry(e *Entry) *QualifiedZoneID {
 	if !e.IsValid() {
-		return ""
+		return nil
 	}
 	provider, _, _ := this.lookupProvider(e.object)
 	return this.GetProviderZoneForName(e.DNSName(), provider)
 }
 
-func (this *state) GetProviderZoneForName(name string, provider DNSProvider) string {
+func (this *state) GetProviderZoneForName(name string, provider DNSProvider) *QualifiedZoneID {
 	this.lock.RLock()
 	defer this.lock.RUnlock()
 
 	found := this.getProviderZoneForName(name, provider)
 	if found != nil {
-		return found.Id()
+		zoneID := found.QualifiedZoneID()
+		return &zoneID
 	}
-	return ""
+	return nil
 }
 
 func (this *state) getProviderZoneForName(hostname string, provider DNSProvider) *dnsHostedZone {
@@ -506,8 +506,8 @@ func (this *state) triggerStatistic() {
 	}
 }
 
-func (this *state) triggerHostedZone(name string) {
-	cmd := CMD_HOSTEDZONE_PREFIX + name
+func (this *state) triggerHostedZone(zoneID QualifiedZoneID) {
+	cmd := CMD_HOSTEDZONE_PREFIX + zoneID.String()
 	if this.context.IsReady() {
 		this.context.EnqueueCommand(cmd)
 	} else {
@@ -523,45 +523,45 @@ func (this *state) triggerKey(key resources.ClusterObjectKey) {
 	}
 }
 
-func (this *state) DecodeZoneCommand(name string) string {
+func (this *state) DecodeZoneCommand(name string) *QualifiedZoneID {
 	if strings.HasPrefix(name, CMD_HOSTEDZONE_PREFIX) {
-		return name[len(CMD_HOSTEDZONE_PREFIX):]
+		return ParseQualifiedZoneID(name[len(CMD_HOSTEDZONE_PREFIX):])
 	}
-	return ""
+	return nil
 }
 
 func (this *state) updateZones(logger logger.LogContext, last, new *dnsProviderVersion) bool {
 	var name resources.ObjectName
 	keeping := []string{}
 	modified := false
-	result := map[string]*dnsHostedZone{}
+	result := map[QualifiedZoneID]*dnsHostedZone{}
 	if new != nil {
 		name = new.ObjectName()
 		for _, z := range new.zones {
-			zone := this.zones[z.Id()]
+			zone := this.zones[z.QualifiedZoneID()]
 			if zone == nil {
 				modified = true
 				zone = newDNSHostedZone(this.config.RescheduleDelay, z)
-				this.zones[z.Id()] = zone
-				logger.Infof("adding hosted zone %q (%s)", z.Id(), z.Domain())
-				this.triggerHostedZone(zone.Id())
+				this.zones[z.QualifiedZoneID()] = zone
+				logger.Infof("adding hosted zone %q (%s)", z.QualifiedZoneID(), z.Domain())
+				this.triggerHostedZone(zone.QualifiedZoneID())
 				this.triggerAllZonePolicies()
 			}
 			zone.update(z)
 
-			if this.isProviderForZone(z.Id(), name) {
+			if this.isProviderForZone(z.QualifiedZoneID(), name) {
 				if last != nil && (!new.included.Equals(last.included) || !new.excluded.Equals(last.excluded)) {
 					modified = true
-					logger.Infof("keeping provider %q for hosted zone %q (%s) with modified domain selection", name, z.Id(), z.Domain())
+					logger.Infof("keeping provider %q for hosted zone %q (%s) with modified domain selection", name, z.QualifiedZoneID(), z.Domain())
 				} else {
-					keeping = append(keeping, fmt.Sprintf("keeping provider %q for hosted zone %q (%s)", name, z.Id(), z.Domain()))
+					keeping = append(keeping, fmt.Sprintf("keeping provider %q for hosted zone %q (%s)", name, z.QualifiedZoneID(), z.Domain()))
 				}
 			} else {
 				modified = true
-				logger.Infof("adding provider %q for hosted zone %q (%s)", name, z.Id(), z.Domain())
-				this.addProviderForZone(z.Id(), name)
+				logger.Infof("adding provider %q for hosted zone %q (%s)", name, z.QualifiedZoneID(), z.Domain())
+				this.addProviderForZone(z.QualifiedZoneID(), name)
 			}
-			result[z.Id()] = zone
+			result[z.QualifiedZoneID()] = zone
 		}
 	}
 
@@ -573,9 +573,9 @@ func (this *state) updateZones(logger logger.LogContext, last, new *dnsProviderV
 				if result[zoneid] == nil {
 					modified = true
 					this.removeProviderForZone(zoneid, name)
-					logger.Infof("removing provider %q for hosted zone %q (%s)", name, z.Id(), z.Domain())
+					logger.Infof("removing provider %q for hosted zone %q (%s)", name, z.QualifiedZoneID(), z.Domain())
 					if !this.hasProvidersForZone(zoneid) {
-						logger.Infof("removing hosted zone %q (%s)", z.Id(), z.Domain())
+						logger.Infof("removing hosted zone %q (%s)", z.QualifiedZoneID(), z.Domain())
 						this.deleteZone(zoneid)
 					}
 				}

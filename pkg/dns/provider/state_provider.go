@@ -124,7 +124,7 @@ func (this *state) _UpdateLocalProvider(logger logger.LogContext, obj *dnsutils.
 	if last != nil && !last.IsValid() && new.IsValid() {
 		logger.Infof("trigger new zones for repaired provider")
 		for _, z := range new.zones {
-			this.triggerHostedZone(z.Id())
+			this.triggerHostedZone(z.QualifiedZoneID())
 		}
 	}
 	return status

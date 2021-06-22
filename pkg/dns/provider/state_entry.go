@@ -19,6 +19,7 @@ package provider
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/gardener/controller-manager-library/pkg/controllermanager/controller/reconcile"
@@ -140,7 +141,7 @@ func (this *state) AddEntryVersion(logger logger.LogContext, v *EntryVersion, st
 			this.cleanupEntry(logger, old)
 		}
 		if new.valid {
-			if this.zones[new.activezone] != nil {
+			if this.zones[*new.activezone] != nil {
 				if this.HasFinalizer(new.Object()) {
 					logger.Infof("deleting delayed until entry deleted in provider")
 					this.outdated.AddEntry(new)
@@ -182,10 +183,10 @@ func (this *state) AddEntryVersion(logger logger.LogContext, v *EntryVersion, st
 		// DNS name changed -> clean up old dns name
 		logger.Infof("dns name changed to %q", new.DNSName())
 		this.cleanupEntry(logger, old)
-		if old.activezone != "" && old.activezone != new.ZoneId() {
-			if this.zones[old.activezone] != nil {
-				logger.Infof("dns zone changed -> trigger old zone '%s'", old.ZoneId())
-				this.triggerHostedZone(old.activezone)
+		if old.activezone != nil && !reflect.DeepEqual(old.activezone, new.ZoneId()) {
+			if this.zones[*old.activezone] != nil {
+				logger.Infof("dns zone changed -> trigger old zone '%s'", *old.ZoneId())
+				this.triggerHostedZone(*old.activezone)
 			}
 		}
 	}
@@ -250,16 +251,19 @@ func (this *state) EntryPremise(e *dnsutils.DNSEntryObject) (*EntryPremise, erro
 
 	if zone != nil {
 		p.ptype = zone.ProviderType()
-		p.zoneid = zone.Id()
+		zoneid := zone.QualifiedZoneID()
+		p.zoneid = &zoneid
 		p.zonedomain = zone.Domain()
 	} else if provider != nil && !provider.IsValid() && e.Status().Zone != nil {
 		p.ptype = provider.TypeCode()
-		p.zoneid = *e.Status().Zone
+		zoneid := NewQualifiedZoneID(provider.TypeCode(), *e.Status().Zone)
+		p.zoneid = &zoneid
 	} else if p.fallback != nil {
 		zone = this.getProviderZoneForName(e.GetDNSName(), p.fallback)
 		if zone != nil {
 			p.ptype = zone.ProviderType()
-			p.zoneid = zone.Id()
+			zoneid := zone.QualifiedZoneID()
+			p.zoneid = &zoneid
 			p.zonedomain = zone.Domain()
 		}
 	}
@@ -275,8 +279,8 @@ func (this *state) HandleUpdateEntry(logger logger.LogContext, op string, object
 
 	p, err := this.EntryPremise(object)
 	if p.provider == nil && err == nil {
-		if p.zoneid != "" {
-			err = fmt.Errorf("no matching provider for zone '%s' found", p.zoneid)
+		if p.zoneid != nil {
+			err = fmt.Errorf("no matching provider for zone '%s' found", *p.zoneid)
 		}
 	}
 
@@ -297,11 +301,13 @@ func (this *state) HandleUpdateEntry(logger logger.LogContext, op string, object
 				status = status.RescheduleAfter(time.Duration(new.Interval()) * time.Second)
 			}
 		}
-		if new.IsModified() && new.ZoneId() != "" {
-			this.SmartInfof(logger, "trigger zone %q", new.ZoneId())
-			this.TriggerHostedZone(new.ZoneId())
-		} else {
-			logger.Debugf("skipping trigger zone %q because entry not modified", new.ZoneId())
+		if new.ZoneId() != nil {
+			if new.IsModified() {
+				this.SmartInfof(logger, "trigger zone %q", *new.ZoneId())
+				this.TriggerHostedZone(*new.ZoneId())
+			} else {
+				logger.Debugf("skipping trigger zone %q because entry not modified", *new.ZoneId())
+			}
 		}
 	}
 
@@ -331,7 +337,7 @@ func (this *state) EntryDeleted(logger logger.LogContext, key resources.ClusterO
 		zone := this.getProviderZoneForName(old.DNSName(), provider)
 		if zone != nil {
 			logger.Infof("removing entry %q (%s[%s])", key.ObjectName(), old.DNSName(), zone.Id())
-			this.triggerHostedZone(zone.Id())
+			this.triggerHostedZone(zone.QualifiedZoneID())
 		} else {
 			this.smartInfof(logger, "removing foreign entry %q (%s)", key.ObjectName(), old.DNSName())
 		}

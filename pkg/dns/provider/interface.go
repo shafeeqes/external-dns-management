@@ -37,7 +37,6 @@ import (
 type Config struct {
 	TTL              int64
 	CacheTTL         time.Duration
-	CacheDir         string
 	RescheduleDelay  time.Duration
 	Ident            string
 	Dryrun           bool
@@ -61,7 +60,6 @@ func NewConfigForController(c controller.Interface, factory DNSHandlerFactory) (
 	if err != nil {
 		cttl = 60
 	}
-	cdir, _ := c.GetStringOption(OPT_CACHE_DIR)
 	dryrun, _ := c.GetBoolOption(OPT_DRYRUN)
 
 	delay, err := c.GetDurationOption(OPT_DNSDELAY)
@@ -101,7 +99,6 @@ func NewConfigForController(c controller.Interface, factory DNSHandlerFactory) (
 		Ident:            ident,
 		TTL:              int64(ttl),
 		CacheTTL:         time.Duration(cttl) * time.Second,
-		CacheDir:         cdir,
 		RescheduleDelay:  rescheduleDelay,
 		Dryrun:           dryrun,
 		ZoneStateCaching: !disableZoneStateCaching,
@@ -116,6 +113,7 @@ type DNSHostedZone interface {
 	ProviderType() string
 	Key() string
 	Id() string
+	QualifiedZoneID() QualifiedZoneID
 	Domain() string
 	ForwardedDomains() []string
 	Match(dnsname string) int
@@ -232,7 +230,7 @@ type DNSProvider interface {
 	DefaultTTL() int64
 
 	GetZones() DNSHostedZones
-	IncludesZone(zoneID string) bool
+	IncludesZone(zoneID QualifiedZoneID) bool
 
 	GetZoneState(zone DNSHostedZone) (DNSZoneState, error)
 	ExecuteRequests(logger logger.LogContext, zone DNSHostedZone, state DNSZoneState, requests []*ChangeRequest) error

@@ -52,9 +52,6 @@ spec:
         {{- else }}
         - --identifier=seed.gardener.cloud/{{ .Values.gardener.garden.clusterIdentity }}/{{ .Values.gardener.seed.identity }}
         {{- end }}
-        {{- if .Values.configuration.persistentCache }}
-        - --cache-dir=/persistent-cache
-        {{- end }}
         ### start generated configuration
         {{- if .Values.configuration.acceptedMaintainers }}
         - --accepted-maintainers={{ .Values.configuration.acceptedMaintainers }}
@@ -190,9 +187,6 @@ spec:
         {{- end }}
         {{- if .Values.configuration.compoundAzureDnsRatelimiterQps }}
         - --compound.azure-dns.ratelimiter.qps={{ .Values.configuration.compoundAzureDnsRatelimiterQps }}
-        {{- end }}
-        {{- if .Values.configuration.compoundCacheDir }}
-        - --compound.cache-dir={{ .Values.configuration.compoundCacheDir }}
         {{- end }}
         {{- if .Values.configuration.compoundCacheTtl }}
         - --compound.cache-ttl={{ .Values.configuration.compoundCacheTtl }}
@@ -795,17 +789,6 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
-        {{- if .Values.configuration.persistentCache }}
-        volumeMounts:
-          - name: persistent-cache
-            mountPath: /persistent-cache
-        {{- end }}
-      {{- if .Values.configuration.persistentCache }}
-      volumes:
-        - name: persistent-cache
-          persistentVolumeClaim:
-            claimName: {{ include "external-dns-management.fullname" . }}
-      {{- end }}
       serviceAccountName: {{ include "external-dns-management.fullname" . }}
       priorityClassName: {{ include "external-dns-management.fullname" . }}
       {{- with .Values.nodeSelector }}

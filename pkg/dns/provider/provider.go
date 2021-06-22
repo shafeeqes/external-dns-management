@@ -20,7 +20,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -43,8 +42,6 @@ import (
 	"github.com/gardener/controller-manager-library/pkg/resources"
 	"github.com/gardener/controller-manager-library/pkg/utils"
 )
-
-const ZoneCachePrefix = "zc-"
 
 func (this DNSProviders) LookupFor(dns string) DNSProvider {
 	var found DNSProvider
@@ -140,15 +137,13 @@ func (this *DNSAccount) Release() {
 type AccountCache struct {
 	lock    sync.Mutex
 	ttl     time.Duration
-	dir     string
 	cache   map[string]*DNSAccount
 	options *FactoryOptions
 }
 
-func NewAccountCache(ttl time.Duration, dir string, opts *FactoryOptions) *AccountCache {
+func NewAccountCache(ttl time.Duration, opts *FactoryOptions) *AccountCache {
 	return &AccountCache{
 		ttl:   ttl,
-		dir:   dir,
 		cache: map[string]*DNSAccount{},
 
 		options: opts,
@@ -167,14 +162,9 @@ func (this *AccountCache) Get(logger logger.LogContext, provider *dnsutils.DNSPr
 		if syncPeriod == nil {
 			return nil, fmt.Errorf("Pool dns not found")
 		}
-		persistDir := ""
-		if this.dir != "" {
-			persistDir = filepath.Join(this.dir, ZoneCachePrefix+hash)
-		}
 		cacheConfig := ZoneCacheConfig{
 			context:               state.GetContext().GetContext(),
 			logger:                logger,
-			persistDir:            persistDir,
 			zonesTTL:              this.ttl,
 			stateTTLGetter:        state.CreateStateTTLGetter(*syncPeriod),
 			disableZoneStateCache: !state.config.ZoneStateCaching,
@@ -571,6 +561,9 @@ func (this *dnsProviderVersion) ExecuteRequests(logger logger.LogContext, zone D
 	return this.account.ExecuteRequests(logger, zone, state, reqs)
 }
 
-func (this *dnsProviderVersion) IncludesZone(zoneID string) bool {
-	return this.included_zones != nil && this.included_zones.Contains(zoneID)
+func (this *dnsProviderVersion) IncludesZone(zoneID QualifiedZoneID) bool {
+	if this.TypeCode() != zoneID.ProviderType() {
+		return false
+	}
+	return this.included_zones != nil && this.included_zones.Contains(zoneID.ZoneID())
 }

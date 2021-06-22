@@ -50,14 +50,14 @@ type EntryPremise struct {
 	ptype    string
 	provider DNSProvider
 	fallback DNSProvider // provider with correct zone, but outside selection (only set if provider == nil)
-	zoneid   string
+	zoneid   *QualifiedZoneID
 
 	// non-identifying fields
 	zonedomain string
 }
 
 func (this *EntryPremise) Match(p *EntryPremise) bool {
-	return this.ptype == p.ptype && this.provider == p.provider && this.zoneid == p.zoneid && this.fallback == p.fallback
+	return this.ptype == p.ptype && this.provider == p.provider && reflect.DeepEqual(this.zoneid, p.zoneid) && this.fallback == p.fallback
 }
 
 func (this *EntryPremise) NotifyChange(p *EntryPremise) string {
@@ -68,7 +68,7 @@ func (this *EntryPremise) NotifyChange(p *EntryPremise) string {
 	if this.provider != p.provider {
 		r = append(r, fmt.Sprintf("provider (%s -> %s)", Provider(this.provider), Provider(p.provider)))
 	}
-	if this.zoneid != p.zoneid {
+	if !reflect.DeepEqual(this.zoneid, p.zoneid) {
 		r = append(r, fmt.Sprintf("zone (%s -> %s)", this.zoneid, p.zoneid))
 	}
 	if this.fallback != p.fallback {
@@ -122,7 +122,7 @@ func (this *EntryVersion) RequiresUpdateFor(e *EntryVersion) (reasons []string) 
 	if this.valid != e.valid {
 		reasons = append(reasons, "validation state changed")
 	}
-	if this.ZoneId() != e.ZoneId() {
+	if !reflect.DeepEqual(this.ZoneId(), e.ZoneId()) {
 		reasons = append(reasons, "zone changed")
 	}
 	if this.OwnerId() != e.OwnerId() {
@@ -162,8 +162,8 @@ func (this *EntryVersion) Message() string {
 	return utils.StringValue(this.status.Message)
 }
 
-func (this *EntryVersion) ZoneId() string {
-	return utils.StringValue(this.status.Zone)
+func (this *EntryVersion) ZoneId() *QualifiedZoneID {
+	return NewQualifiedZoneIDPtr(this.status.ProviderType, this.status.Zone)
 }
 
 func (this *EntryVersion) State() string {
@@ -378,8 +378,8 @@ func (this *EntryVersion) Setup(logger logger.LogContext, state *state, p *Entry
 		this.status.ProviderType = this.object.Status().ProviderType
 	}
 
-	if utils.IsEmptyString(this.status.ProviderType) || (p.zoneid != "" && *this.status.ProviderType != p.ptype) {
-		if p.zoneid == "" {
+	if utils.IsEmptyString(this.status.ProviderType) || (p.zoneid != nil && *this.status.ProviderType != p.ptype) {
+		if p.zoneid == nil {
 			// mark unassigned foreign entries as erroneous
 			if this.object.GetCreationTimestamp().Add(config.RescheduleDelay).After(time.Now()) {
 				state.RemoveFinalizer(this.object)
@@ -401,13 +401,13 @@ func (this *EntryVersion) Setup(logger logger.LogContext, state *state, p *Entry
 		} else {
 			// assign entry to actual type
 			hello.Infof(logger)
-			logger.Infof("assigning to provider type %q responsible for zone %s", p.ptype, p.zoneid)
+			logger.Infof("assigning to provider type %q responsible for zone %s", p.ptype, p.zoneid.ZoneID())
 			this.status.State = api.STATE_PENDING
 			this.status.Message = StatusMessage("waiting for dns reconciliation")
 		}
 	}
 
-	if p.zoneid == "" && !utils.IsEmptyString(this.status.ProviderType) && p.ptypes.Contains(*this.status.ProviderType) {
+	if p.zoneid == nil && !utils.IsEmptyString(this.status.ProviderType) && p.ptypes.Contains(*this.status.ProviderType) {
 		// revoke assignment to actual type
 		oldType := utils.StringValue(this.status.ProviderType)
 		hello.Infof(logger, "revoke assignment to %s", oldType)
@@ -420,12 +420,13 @@ func (this *EntryVersion) Setup(logger logger.LogContext, state *state, p *Entry
 		}
 	}
 
-	if p.zoneid == "" || p.ptype == "" {
+	if p.zoneid == nil || p.ptype == "" {
 		return reconcile.RepeatOnError(logger, state.RemoveFinalizer(this.object))
 	}
 
 	provider := ""
-	this.status.Zone = &p.zoneid
+	zoneID := p.zoneid.ZoneID()
+	this.status.Zone = &zoneID
 	this.status.ProviderType = &p.ptype
 	this.responsible = true
 	if p.provider != nil {
@@ -520,7 +521,7 @@ func (this *EntryVersion) Setup(logger logger.LogContext, state *state, p *Entry
 				}
 			}
 		} else {
-			if p.zoneid == "" {
+			if p.zoneid == nil {
 				this.status.State = api.STATE_ERROR
 				this.status.Provider = nil
 				this.status.Message = StatusMessagef("no provider found for %q", this.dnsname)
@@ -540,7 +541,7 @@ func (this *EntryVersion) Setup(logger logger.LogContext, state *state, p *Entry
 	f := func(data resources.ObjectData) (bool, error) {
 		e := data.(*api.DNSEntry)
 		mod := &utils.ModificationState{}
-		if p.zoneid != "" {
+		if p.zoneid != nil {
 			mod.AssureStringPtrValue(&e.Status.ProviderType, p.ptype)
 		}
 		mod.AssureStringValue(&e.Status.State, this.status.State).
@@ -711,7 +712,7 @@ type Entry struct {
 	key        string
 	createdAt  time.Time
 	modified   bool
-	activezone string
+	activezone *QualifiedZoneID
 	state      *state
 
 	*EntryVersion
@@ -724,7 +725,7 @@ func NewEntry(v *EntryVersion, state *state) *Entry {
 		state:        state,
 		modified:     true,
 		createdAt:    time.Now(),
-		activezone:   utils.StringValue(v.status.Zone),
+		activezone:   NewQualifiedZoneIDPtr(v.status.ProviderType, v.status.Zone),
 	}
 }
 
@@ -817,9 +818,9 @@ func (this Entries) AddResponsibleTo(list *EntryList) {
 	}
 }
 
-func (this Entries) AddActiveZoneTo(zoneid string, list *EntryList) {
+func (this Entries) AddActiveZoneTo(zoneid QualifiedZoneID, list *EntryList) {
 	for _, e := range this {
-		if e.activezone == zoneid {
+		if e.activezone != nil && *e.activezone == zoneid {
 			*list = append(*list, e)
 		}
 	}
@@ -859,7 +860,7 @@ func (this *synchronizedEntries) AddResponsibleTo(list *EntryList) {
 	this.entries.AddResponsibleTo(list)
 }
 
-func (this *synchronizedEntries) AddActiveZoneTo(zoneid string, list *EntryList) {
+func (this *synchronizedEntries) AddActiveZoneTo(zoneid QualifiedZoneID, list *EntryList) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
 	this.entries.AddActiveZoneTo(zoneid, list)

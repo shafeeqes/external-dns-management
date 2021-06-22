@@ -86,8 +86,7 @@ func NewHandler(config *provider.DNSHandlerConfig) (provider.DNSHandler, error) 
 		return nil, err
 	}
 
-	forwardedDomains := provider.NewForwardedDomainsHandlerData()
-	h.cache, err = provider.NewZoneCache(config.CacheConfig, config.Metrics, forwardedDomains, h.getZones, h.getZoneState)
+	h.cache, err = provider.NewZoneCache(config.CacheConfig, config.Metrics, true, h.getZones, h.getZoneState)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +127,7 @@ func (h *Handler) getZones(cache provider.ZoneCache) (provider.DNSHostedZones, e
 		// call GetZoneState for side effect to calculate forwarded domains
 		_, err := cache.GetZoneState(hostedZone)
 		if err == nil {
-			forwarded := cache.GetHandlerData().(*provider.ForwardedDomainsHandlerData).GetForwardedDomains(hostedZone.Id())
+			forwarded := cache.GetForwardedDomains(hostedZone.Id())
 			if forwarded != nil {
 				hostedZone = provider.CopyDNSHostedZone(hostedZone, forwarded)
 			}
@@ -184,7 +183,7 @@ func (h *Handler) getZoneState(zone provider.DNSHostedZone, cache provider.ZoneC
 	if err != nil {
 		return nil, err
 	}
-	cache.GetHandlerData().(*provider.ForwardedDomainsHandlerData).SetForwardedDomains(zone.Id(), forwarded)
+	cache.SetForwardedDomains(zone.Id(), forwarded)
 
 	return provider.NewDNSZoneState(dnssets), nil
 }

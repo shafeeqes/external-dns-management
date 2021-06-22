@@ -115,7 +115,6 @@ func DNSController(name string, factory DNSHandlerFactory) controller.Configurat
 		RequireLease().
 		DefaultedStringOption(OPT_CLASS, dns.DEFAULT_CLASS, "Class identifier used to differentiate responsible controllers for entry resources").
 		DefaultedStringOption(OPT_IDENTIFIER, "dnscontroller", "Identifier used to mark DNS entries in DNS system").
-		DefaultedStringOption(OPT_CACHE_DIR, "", "Directory to store zone caches (for reload after restart)").
 		DefaultedBoolOption(OPT_DRYRUN, false, "just check, don't modify").
 		DefaultedBoolOption(OPT_DISABLE_ZONE_STATE_CACHING, false, "disable use of cached dns zone state on changes").
 		DefaultedIntOption(OPT_TTL, 300, "Default time-to-live for DNS entries. Defines how long the record is kept in cache by DNS servers or resolvers.").
@@ -188,8 +187,6 @@ func Create(c controller.Interface, factory DNSHandlerFactory) (reconcile.Interf
 		return nil, err
 	}
 
-	zoneCacheCleanupOutdated(c, config.CacheDir, ZoneCachePrefix)
-
 	ownerresc, err := c.GetCluster(TARGET_CLUSTER).Resources().GetByGK(ownerGroupKind)
 	if err != nil {
 		return nil, err
@@ -219,8 +216,8 @@ func (this *reconciler) Command(logger logger.LogContext, cmd string) reconcile.
 		this.state.UpdateOwnerCounts(logger)
 	} else {
 		zoneid := this.state.DecodeZoneCommand(cmd)
-		if zoneid != "" {
-			return this.state.ReconcileZone(logger, zoneid)
+		if zoneid != nil {
+			return this.state.ReconcileZone(logger, *zoneid)
 		}
 		logger.Infof("got unhandled command %q", cmd)
 	}

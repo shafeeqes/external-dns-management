@@ -186,8 +186,8 @@ func (this *ChangeModel) getProviderView(p DNSProvider) *ChangeGroup {
 	return v
 }
 
-func (this *ChangeModel) ZoneId() string {
-	return this.context.zone.Id()
+func (this *ChangeModel) QualifiedZoneID() QualifiedZoneID {
+	return this.context.zone.QualifiedZoneID()
 }
 
 func (this *ChangeModel) Domain() string {
@@ -211,7 +211,7 @@ func (this *ChangeModel) Setup() error {
 
 	provider := this.getDefaultProvider()
 	if provider == nil {
-		return fmt.Errorf("no provider found for zone %q", this.ZoneId())
+		return fmt.Errorf("no provider found for zone %q", this.QualifiedZoneID())
 	}
 	this.zonestate, err = provider.GetZoneState(this.context.zone.getZone())
 	if err != nil {
@@ -235,7 +235,7 @@ func (this *ChangeModel) Setup() error {
 			this.dumpf("    %s: %d records: %s", t, len(r.Records), r.RecordString())
 		}
 	}
-	this.Infof("found %d entries in zone %s (using %d groups)", len(sets), this.ZoneId(), len(this.providergroups))
+	this.Infof("found %d entries in zone %s (using %d groups)", len(sets), this.QualifiedZoneID(), len(this.providergroups))
 	return err
 }
 

@@ -168,7 +168,7 @@ func NewHandler(config *provider.DNSHandlerConfig) (provider.DNSHandler, error) 
 
 	h.access = NewAccess(client, *h.infobloxConfig.View, config.Metrics)
 
-	h.ZoneCache, err = provider.NewZoneCache(*config.CacheConfig.CopyWithDisabledZoneStateCache(), config.Metrics, nil, h.getZones, h.getZoneState)
+	h.ZoneCache, err = provider.NewZoneCache(*config.CacheConfig.CopyWithDisabledZoneStateCache(), config.Metrics, false, h.getZones, h.getZoneState)
 	if err != nil {
 		return nil, err
 	}

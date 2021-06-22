@@ -61,6 +61,10 @@ func (tz *testzone) Id() string {
 	return tz.zone.ID
 }
 
+func (tz *testzone) QualifiedZoneID() provider.QualifiedZoneID {
+	return provider.NewQualifiedZoneID(tz.ProviderType(), tz.Id())
+}
+
 func (tz *testzone) Domain() string {
 	return tz.zone.Name
 }
@@ -203,7 +207,7 @@ func newMockHandler(mockZones ...*zones.Zone) *Handler {
 	}
 
 	cacheConfig := provider.NewTestZoneCacheConfig(0 * time.Second)
-	cache, _ := provider.NewZoneCache(*cacheConfig, mockMetrics, nil, h.getZones, h.getZoneState)
+	cache, _ := provider.NewZoneCache(*cacheConfig, mockMetrics, false, h.getZones, h.getZoneState)
 	h.cache = cache
 	return h
 }

@@ -147,50 +147,25 @@ func ReportAccountProviders(ptype, account string, amount int) {
 	Accounts.WithLabelValues(ptype, account).Set(float64(amount))
 }
 
-func AddRequests(ptype, account, requestType string, no int, zone *string) {
+func AddRequests(ptype, account, requestType string, no int, zoneid *string) {
 	theRequestLabels.AddRequestLabel(ptype, account, requestType)
 	Requests.WithLabelValues(ptype, account, requestType).Add(float64(no))
-	if zone != nil {
-		ZoneRequests.WithLabelValues(ptype, account, requestType, *zone).Add(float64(no))
+	if zoneid != nil {
+		ZoneRequests.WithLabelValues(ptype, account, requestType, *zoneid).Add(float64(no))
 	}
 }
 
-func AddZoneCacheDiscarding(ptype, zone string) {
-	ZoneCacheDiscardings.WithLabelValues(ptype, zone).Add(float64(1))
+func AddZoneCacheDiscarding(ptype, zoneid string) {
+	ZoneCacheDiscardings.WithLabelValues(ptype, zoneid).Add(float64(1))
 }
 
-type ZoneProviderTypes struct {
-	lock      sync.Mutex
-	providers map[string]string
+func ReportZoneEntries(ptype, zoneid string, amount int, stale int) {
+	Entries.WithLabelValues(ptype, zoneid).Set(float64(amount))
+	StaleEntries.WithLabelValues(ptype, zoneid).Set(float64(stale))
 }
 
-func (this *ZoneProviderTypes) Add(ptype, zone string) {
-	this.lock.Lock()
-	defer this.lock.Unlock()
-	this.providers[zone] = ptype
-}
-
-func (this *ZoneProviderTypes) Remove(zone string) string {
-	this.lock.Lock()
-	defer this.lock.Unlock()
-	ptype := this.providers[zone]
-	delete(this.providers, zone)
-	return ptype
-}
-
-var zoneProviders = &ZoneProviderTypes{providers: map[string]string{}}
-
-func ReportZoneEntries(ptype, zone string, amount int, stale int) {
-	Entries.WithLabelValues(ptype, zone).Set(float64(amount))
-	StaleEntries.WithLabelValues(ptype, zone).Set(float64(stale))
-	zoneProviders.Add(ptype, zone)
-}
-
-func DeleteZone(zone string) {
-	ptype := zoneProviders.Remove(zone)
-	if ptype != "" {
-		Entries.DeleteLabelValues(ptype, zone)
-	}
+func DeleteZone(ptype, zoneid string) {
+	Entries.DeleteLabelValues(ptype, zoneid)
 }
 
 var currentStatistic = statistic.NewEntryStatistic()

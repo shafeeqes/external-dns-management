@@ -36,10 +36,10 @@ import (
 // state handling for zone reconcilation
 ////////////////////////////////////////////////////////////////////////////////
 
-func (this *state) TriggerHostedZone(name string) {
+func (this *state) TriggerHostedZone(zoneID QualifiedZoneID) {
 	this.lock.Lock()
 	defer this.lock.Unlock()
-	this.triggerHostedZone(name)
+	this.triggerHostedZone(zoneID)
 }
 
 func (this *state) TriggerHostedZonesByChangedOwners(logger logger.LogContext, changed utils.StringSet) {
@@ -53,7 +53,7 @@ func (this *state) TriggerHostedZonesByChangedOwners(logger logger.LogContext, c
 	}
 }
 
-func (this *state) GetZoneReconcilation(logger logger.LogContext, zoneid string) (time.Duration, bool, *zoneReconciliation) {
+func (this *state) GetZoneReconcilation(logger logger.LogContext, zoneid QualifiedZoneID) (time.Duration, bool, *zoneReconciliation) {
 	req := &zoneReconciliation{
 		fhandler: this.context,
 	}
@@ -95,7 +95,7 @@ func (this *state) reconcileZoneBlockingEntries(logger logger.LogContext) int {
 	return len(this.blockingEntries)
 }
 
-func (this *state) ReconcileZone(logger logger.LogContext, zoneid string) reconcile.Status {
+func (this *state) ReconcileZone(logger logger.LogContext, zoneid QualifiedZoneID) reconcile.Status {
 	logger.Infof("Initiate reconcilation of zone %s", zoneid)
 	defer logger.Infof("zone %s done", zoneid)
 
@@ -127,7 +127,7 @@ func (this *state) ReconcileZone(logger logger.LogContext, zoneid string) reconc
 				}
 				return reconcile.Succeeded(logger)
 			}
-			logger.Infof("zone reconcilation failed for %s: %s", req.zone.Id(), err)
+			logger.Infof("zone reconcilation failed for %s: %s", req.zone.QualifiedZoneID(), err)
 			return reconcile.Succeeded(logger).RescheduleAfter(req.zone.RateLimit())
 		}
 		return reconcile.Succeeded(logger)
@@ -167,11 +167,11 @@ func (this *state) StartZoneReconcilation(logger logger.LogContext, req *zoneRec
 }
 
 func (this *state) reconcileZone(logger logger.LogContext, req *zoneReconciliation) error {
-	zoneid := req.zone.Id()
+	zoneid := req.zone.QualifiedZoneID()
 	req.zone.SetNext(time.Now().Add(this.config.Delay))
 	ownerids := req.ownerIds
-	metrics.ReportZoneEntries(req.zone.ProviderType(), zoneid, len(req.entries), len(req.stale))
-	logger.Infof("reconcile ZONE %s (%s) for %d dns entries (%d stale)", req.zone.Id(), req.zone.Domain(), len(req.entries), len(req.stale))
+	metrics.ReportZoneEntries(zoneid.ProviderType(), zoneid.ZoneID(), len(req.entries), len(req.stale))
+	logger.Infof("reconcile ZONE %s (%s) for %d dns entries (%d stale)", zoneid, req.zone.Domain(), len(req.entries), len(req.stale))
 	logger.Debugf("    ownerids: %s", ownerids)
 	changes := NewChangeModel(logger, ownerids, req, this.config)
 	err := changes.Setup()
@@ -220,8 +220,8 @@ func (this *state) reconcileZone(logger logger.LogContext, req *zoneReconciliati
 	return err
 }
 
-func (this *state) deleteZone(zoneid string) {
-	metrics.DeleteZone(zoneid)
+func (this *state) deleteZone(zoneid QualifiedZoneID) {
+	metrics.DeleteZone(zoneid.ProviderType(), zoneid.ZoneID())
 	delete(this.zones, zoneid)
 	this.triggerAllZonePolicies()
 }

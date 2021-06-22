@@ -72,7 +72,7 @@ func NewHandler(config *provider.DNSHandlerConfig) (provider.DNSHandler, error) 
 		}
 	}
 
-	h.cache, err = provider.NewZoneCache(config.CacheConfig, config.Metrics, nil, h.getZones, h.getZoneState)
+	h.cache, err = provider.NewZoneCache(config.CacheConfig, config.Metrics, false, h.getZones, h.getZoneState)
 	if err != nil {
 		return nil, err
 	}

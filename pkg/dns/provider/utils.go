@@ -27,10 +27,10 @@ var _ Metrics = &NullMetrics{}
 func (m *NullMetrics) AddGenericRequests(request_type string, n int) {
 }
 
-func (m *NullMetrics) AddZoneRequests(zon, request_type string, n int) {
+func (m *NullMetrics) AddZoneRequests(zoneid, request_type string, n int) {
 }
 
-func copyZones(src map[string]*dnsHostedZone) dnsHostedZones {
+func copyZones(src map[QualifiedZoneID]*dnsHostedZone) dnsHostedZones {
 	dst := dnsHostedZones{}
 	for k, v := range src {
 		dst[k] = v
@@ -48,7 +48,7 @@ func errorValue(format string, err error) string {
 func filterZoneByProvider(zones []*dnsHostedZone, provider DNSProvider) *dnsHostedZone {
 	if provider != nil {
 		for _, zone := range zones {
-			if provider.IncludesZone(zone.Id()) {
+			if provider.IncludesZone(zone.QualifiedZoneID()) {
 				return zone
 			}
 		}

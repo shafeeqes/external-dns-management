@@ -44,9 +44,6 @@ for line in options.split("\n"):
 
 defaultValues = {
   "controllers": "all",
-  "persistentCache": "false",
-  "persistentCacheStorageSize": "1Gi",
-  "persistentCacheStorageSizeAlicloud": "20Gi",
   "serverPortHttp": "8080",
   "ttl": 120,
 }
